@@ -1,4 +1,10 @@
 use anyhow::{Result};
+use std::{
+    sync::{
+        Arc,
+    },
+    collections::{VecDeque},
+};
 
 use crate::error::CustomError;
 
@@ -106,5 +112,94 @@ impl Order {
         self.remaining_quantity -= quantity;
 
         Ok(())
+    }
+}
+
+/*
+    When we are writing to an ordebook for a new order, we need all the fields.
+    When we are modifying the order, we need the order_id generated before and the new quantity
+    When we are cancelling, we need the order_id only.
+*/
+
+
+type OrderPointer = Arc<Order>;
+type OrderPointers = VecDeque<OrderPointer>;
+
+pub struct OrderModify {
+    pub order_id: OrderId,
+    pub price: Price,
+    pub side: Side,
+    pub quantity: Quantity,
+}
+
+impl OrderModify {
+    pub fn new(order_id: OrderId, side: Side, price: Price, quantity: Quantity) -> Self {
+        Self {
+            order_id,
+            price,
+            side, 
+            quantity
+        }
+    }
+
+    pub fn get_order_id(&self) -> OrderId { self.order_id }
+    pub fn get_price(&self) -> Price { self.price }
+    pub fn get_side(&self) -> Side { self.side }
+    pub fn get_quantity(&self) -> Quantity { self.quantity }
+
+    pub fn to_order_pointer(&self, order_type: OrderType) -> OrderPointer {
+        Arc::new(Order::new(order_type, self.order_id, self.side, self.price, self.quantity))
+    }
+}
+
+pub struct TradeInfo {
+    pub order_id: OrderId,
+    pub quantity: Quantity,
+    pub price: Price,
+}
+
+pub struct Trade {
+    pub bid_trade: TradeInfo,
+    pub ask_trade: TradeInfo,
+}
+
+impl Trade {
+    pub fn new(bid_trade: TradeInfo, ask_trade: TradeInfo) -> Self {
+        Self {
+            bid_trade,
+            ask_trade,
+        }
+    }
+
+    pub fn get_bid_trade(&self) -> &TradeInfo {
+        &self.bid_trade
+    }
+
+    pub fn get_ask_trade(&self) -> &TradeInfo {
+        &self.ask_trade
+    }
+}
+
+type Trades = VecDeque<Trade>;
+
+
+
+pub struct OrderBook {
+    pub order_book: Arc<Vec<Order>>,
+}
+
+impl OrderBook {
+
+    pub fn new() -> Self {
+        let vec_orders: Vec<Order> = Vec::new();
+        
+        Self {
+            order_book: Arc::new(vec_orders)
+        }
+    }
+
+    pub fn run(&self) -> Result<(), CustomError> {
+        
+        return Ok(());
     }
 }
