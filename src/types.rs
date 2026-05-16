@@ -3,7 +3,8 @@ use std::{
     sync::{
         Arc,
     },
-    collections::{VecDeque},
+    cmp::Reverse,
+    collections::{BTreeMap, VecDeque, HashMap},
 };
 
 use crate::error::CustomError;
@@ -182,24 +183,43 @@ impl Trade {
 
 type Trades = VecDeque<Trade>;
 
-
+struct OrderEntry {
+    order: OrderPointer,
+    location: usize
+}
 
 pub struct OrderBook {
-    pub order_book: Arc<Vec<Order>>,
+    pub bids: BTreeMap<Reverse<Price>, OrderPointers>,
+    pub asks: BTreeMap<Price, OrderPointers>,
+    pub orders: HashMap<OrderId, OrderEntry>,
 }
 
 impl OrderBook {
+    pub fn CanMatch(&mut self, side: Side, price: Price) -> bool {
+        match side {
+            Side::Buy => {
+                if self.asks.len() == 0 {
+                    println!("Cannot match. No Asks");
+                    return false;
+                }
 
-    pub fn new() -> Self {
-        let vec_orders: Vec<Order> = Vec::new();
-        
-        Self {
-            order_book: Arc::new(vec_orders)
+                let Some((&best_ask_price, _best_ask_order_p)) = self.asks.first_key_value() else {
+                    return false;
+                };
+                return price >= best_ask_price;
+            }
+            Side::Sell => {
+                if self.bids.len() == 0 {
+                    println!("Cannot match. No Bids");
+                    return false;
+                }
+
+                let Some((&best_bid_price, _best_bid_order_p)) = self.bids.first_key_value() else {
+                    return false;
+                };
+                return price <= best_bid_price.0;
+            }
         }
-    }
-
-    pub fn run(&self) -> Result<(), CustomError> {
-        
-        return Ok(());
+        return false;
     }
 }
