@@ -199,6 +199,15 @@ pub struct OrderBook {
 }
 
 impl OrderBook {
+
+    pub fn new() -> Self {
+        Self {
+            bids: BTreeMap::new(),
+            asks: BTreeMap::new(),
+            orders: HashMap::new(),
+        }
+    }
+
     fn can_match(&mut self, side: Side, price: Price) -> bool {
         match side {
             Side::Buy => {
@@ -321,7 +330,7 @@ impl OrderBook {
                 let bid_obj = bid_remaining_qty.lock().unwrap();
                 if bid_obj.get_order_type() == OrderType::FillAndKill {
                     let curr_order_id = bid_obj.get_order_id();
-                    self.cancel_order(curr_order_id.clone());
+                    let _ = self.cancel_order(curr_order_id.clone());
                 }
             }
         }
@@ -339,7 +348,7 @@ impl OrderBook {
                 let ask_obj = ask_remaining_qty.lock().unwrap();
                 if ask_obj.get_order_type() == OrderType::FillAndKill {
                     let curr_order_id = ask_obj.get_order_id();
-                    self.cancel_order(curr_order_id.clone());
+                    let _ = self.cancel_order(curr_order_id.clone());
                 }
             }
         }
@@ -353,10 +362,10 @@ impl OrderBook {
             return Err(CustomError::CancelOrder(format!("Order doesn't exists. Invalid Order Id: {}", order_id)));
         }
 
-        // let mut order_to_del = self.orders.get(&order_id).unwrap();
         let Some(order_to_del) = self.orders.remove(&order_id) else {
             return Ok(());
         };
+        
         let curr_order = order_to_del.lock().unwrap();
 
         match curr_order.get_side() {
@@ -434,4 +443,62 @@ impl OrderBook {
         let _trades = self.match_orders();
         Ok(trades)
     }
+
+    pub fn update_order(&mut self, order: Order) -> Result<Trades, CustomError> {
+        let curr_order_id = order.get_order_id();
+
+        if self.orders.contains_key(&curr_order_id) {
+            return Err(CustomError::DuplicateOrder(format!("OrderID: {} already exists", curr_order_id)));
+        }
+
+        let Some(order_to_del) = self.orders.remove(&curr_order_id) else {
+            return Ok(Trades::new());
+        };
+
+        let curr_order = order_to_del.lock().unwrap();
+        let _ = self.cancel_order(curr_order.get_order_id());
+        let trades = self.add_order(order).map_err(|e| CustomError::AddOrderError(format!("Error Adding order : {:?}", e)))?;
+
+        Ok(trades)
+
+    }
+
+    pub fn size(&self) -> usize {
+        self.orders.len()
+    }
+
+    pub fn get_order_infos(&self) -> Result<OrderbookLevelInfos, CustomError> {
+        let mut bid_info: Vec<LevelInfo> = Vec::new();
+        let mut ask_info: Vec<LevelInfo> = Vec::new();
+
+        for (price, bid_order_p) in self.bids.iter() {
+            let qty: Quantity = bid_order_p.iter().map(|order_arc|  order_arc.lock().map(|order| order.get_remaining_quantity()).unwrap_or(0)).sum();
+
+            let curr_bid_level_info: LevelInfo = LevelInfo {
+                price: price.0,
+                quantity: qty
+            };
+
+            bid_info.push(curr_bid_level_info);
+        }
+
+        for (price, ask_order_p) in self.asks.iter() {
+            let qty: Quantity = ask_order_p.iter().map(|order_arc|  order_arc.lock().map(|order| order.get_remaining_quantity()).unwrap_or(0)).sum();
+
+            let curr_ask_level_info: LevelInfo = LevelInfo {
+                price: *price,
+                quantity: qty
+            };
+
+            ask_info.push(curr_ask_level_info);
+        }
+
+        let order_book_level_info = OrderbookLevelInfos {
+            bids: bid_info,
+            asks: ask_info,
+        };
+
+        return Ok(order_book_level_info);
+    }
+
 }

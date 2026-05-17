@@ -10,5 +10,8 @@ pub enum CustomError{
     DuplicateOrder(String),
 
     #[error("Cancel Order: {0}")]
-    CancelOrder(String)
+    CancelOrder(String),
+
+    #[error("Add Order Error: {0}")]
+    AddOrderError(String),
 }
