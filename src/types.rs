@@ -189,14 +189,13 @@ impl Trade {
 type Trades = VecDeque<Trade>;
 
 struct OrderEntry {
-    order: OrderPointer,
-    location: usize
+    order: OrderPointer
 }
 
 pub struct OrderBook {
     pub bids: BTreeMap<Reverse<Price>, OrderPointers>,
     pub asks: BTreeMap<Price, OrderPointers>,
-    pub orders: HashMap<OrderId, OrderEntry>,
+    pub orders: HashMap<OrderId, OrderPointer>,
 }
 
 impl OrderBook {
@@ -310,7 +309,7 @@ impl OrderBook {
 
         // Check for fill and kill orders. If not matches found from above, just Cancel the fok order.
         if self.bids.len() == 0 {
-            let Some((&_best_bid_price, best_bid_order_p)) = self.bids.first_key_value() else {
+            let Some((_best_bid_price, best_bid_order_p)) = self.bids.pop_first() else {
                 return trades;
             };
 
@@ -319,15 +318,16 @@ impl OrderBook {
             };
 
             {
-                let mut bid_obj = bid_remaining_qty.lock().unwrap();
+                let bid_obj = bid_remaining_qty.lock().unwrap();
                 if bid_obj.get_order_type() == OrderType::FillAndKill {
-                    self.cancel_order(bid_obj.get_order_id());
+                    let curr_order_id = bid_obj.get_order_id();
+                    self.cancel_order(curr_order_id.clone());
                 }
             }
         }
 
         if self.asks.len() == 0 {
-            let Some((&_best_ask_price, best_ask_order_p)) = self.asks.first_key_value() else {
+            let Some((_best_ask_price, best_ask_order_p)) = self.asks.pop_first() else {
                 return trades;
             };
 
@@ -336,18 +336,102 @@ impl OrderBook {
             };
 
             {
-                let mut ask_obj = ask_remaining_qty.lock().unwrap();
+                let ask_obj = ask_remaining_qty.lock().unwrap();
                 if ask_obj.get_order_type() == OrderType::FillAndKill {
-                    self.cancel_order(ask_obj.get_order_id());
+                    let curr_order_id = ask_obj.get_order_id();
+                    self.cancel_order(curr_order_id.clone());
                 }
             }
         }
         
- 
         trades
     }
 
-    pub fn cancel_order(&self, order_id: OrderId) -> () {
+    pub fn cancel_order(&mut self, order_id: OrderId) -> Result<(), CustomError> {
 
+        if !self.orders.contains_key(&order_id) {
+            return Err(CustomError::CancelOrder(format!("Order doesn't exists. Invalid Order Id: {}", order_id)));
+        }
+
+        // let mut order_to_del = self.orders.get(&order_id).unwrap();
+        let Some(order_to_del) = self.orders.remove(&order_id) else {
+            return Ok(());
+        };
+        let curr_order = order_to_del.lock().unwrap();
+
+        match curr_order.get_side() {
+            Side::Buy => {
+                if let std::collections::btree_map::Entry::Occupied(mut bid_order_p) = self.bids.entry(Reverse(curr_order.get_price())) {
+                    let mut_order_p = bid_order_p.get_mut();
+                    
+                    if let Some(idx) = mut_order_p.iter().position(|order_arc| {
+                        if let Ok(order) = order_arc.lock() {
+                            order.order_id == order_id
+                        } else {
+                            false
+                        }
+                    }) {
+                        let removed_order = mut_order_p.swap_remove_back(idx);
+                        println!("Succcessfully removed order from bids: ");
+                    }
+
+                    if mut_order_p.is_empty() {
+                        bid_order_p.remove();
+                    }
+                }
+            },
+            Side::Sell => {
+                if let std::collections::btree_map::Entry::Occupied(mut ask_order_p) = self.asks.entry(curr_order.get_price()) {
+                    let mut_order_p = ask_order_p.get_mut();
+                    
+                    if let Some(idx) = mut_order_p.iter().position(|order_arc| {
+                        if let Ok(order) = order_arc.lock() {
+                            order.order_id == order_id
+                        } else {
+                            false
+                        }
+                    }) {
+                        let removed_order = mut_order_p.swap_remove_back(idx);
+                        println!("Succcessfully removed order from bids: ");
+                    }
+
+                    if mut_order_p.is_empty() {
+                        ask_order_p.remove();
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn add_order(&mut self, order: Order) -> Result<Trades, CustomError> {
+        let trades = VecDeque::new();
+        let curr_order_id = order.get_order_id();
+        let curr_order_side = order.get_side();
+        let curr_order_price = order.get_price();
+
+        if self.orders.contains_key(&curr_order_id) {
+            return Err(CustomError::DuplicateOrder(format!("OrderID: {} already exists", curr_order_id)));
+        }
+
+        if order.get_order_type() == OrderType::FillAndKill && !self.can_match(curr_order_side.clone(), curr_order_price.clone()) {
+            return Ok(trades);
+        }
+
+        match order.get_side() {
+            Side::Buy => {
+                self.asks.insert(curr_order_price, OrderPointers::new());
+            },
+            Side::Sell => {
+                self.bids.insert(Reverse(curr_order_price), OrderPointers::new());
+            }
+        }
+
+        let new_order: OrderPointer = Arc::new(Mutex::new(order));
+        self.orders.insert(curr_order_id, new_order);
+
+        let _trades = self.match_orders();
+        Ok(trades)
     }
 }

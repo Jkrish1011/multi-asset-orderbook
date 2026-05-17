@@ -4,5 +4,11 @@ use thiserror::Error;
 pub enum CustomError{
 
     #[error("InvalidFillAmount: {0}")]
-    InvalidFillAmount(String)
+    InvalidFillAmount(String),
+
+    #[error("Duplicate Order: {0}")]
+    DuplicateOrder(String),
+
+    #[error("Cancel Order: {0}")]
+    CancelOrder(String)
 }
