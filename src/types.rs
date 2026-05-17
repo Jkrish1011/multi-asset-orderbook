@@ -1,11 +1,9 @@
-use anyhow::{Result};
+use anyhow::Result;
 use std::{
-    sync::{
-        Arc, Mutex
-    },
     cmp,
-    cmp::{Reverse},
-    collections::{BTreeMap, VecDeque, HashMap},
+    cmp::Reverse,
+    collections::{BTreeMap, HashMap, VecDeque},
+    sync::{Arc, Mutex},
 };
 
 use crate::error::CustomError;
@@ -41,11 +39,8 @@ pub struct OrderbookLevelInfos {
 
 impl OrderbookLevelInfos {
     pub fn new(bids: Vec<LevelInfo>, asks: Vec<LevelInfo>) -> Self {
-        OrderbookLevelInfos {
-            bids,
-            asks
-        }
-    } 
+        OrderbookLevelInfos { bids, asks }
+    }
 
     pub fn get_bids(&self) -> &Vec<LevelInfo> {
         &self.bids
@@ -56,24 +51,31 @@ impl OrderbookLevelInfos {
     }
 }
 
+#[derive(Clone, Debug, Copy)]
 pub struct Order {
     pub order_type: OrderType,
     pub order_id: OrderId,
     pub side: Side,
-    pub price: Price, 
+    pub price: Price,
     pub initial_quantity: Quantity,
     pub remaining_quantity: Quantity,
 }
 
 impl Order {
-    pub fn new(order_type: OrderType, order_id: OrderId, side: Side, price: Price, quantity: Quantity) -> Self {
+    pub fn new(
+        order_type: OrderType,
+        order_id: OrderId,
+        side: Side,
+        price: Price,
+        quantity: Quantity,
+    ) -> Self {
         Self {
             order_type,
             order_id,
             side,
             price,
             initial_quantity: quantity,
-            remaining_quantity: quantity
+            remaining_quantity: quantity,
         }
     }
 
@@ -106,9 +108,11 @@ impl Order {
     }
 
     pub fn fill(&mut self, quantity: Quantity) -> Result<(), CustomError> {
-
         if quantity > self.remaining_quantity {
-            return Err(CustomError::InvalidFillAmount(format!("Order ({}) : ({}) quantity cannot be filled for more than it's remaining quantity : ({})", self.order_id, quantity, self.remaining_quantity)));
+            return Err(CustomError::InvalidFillAmount(format!(
+                "Order ({}) : ({}) quantity cannot be filled for more than it's remaining quantity : ({})",
+                self.order_id, quantity, self.remaining_quantity
+            )));
         }
 
         self.remaining_quantity -= quantity;
@@ -127,7 +131,6 @@ impl Order {
     When we are cancelling, we need the order_id only.
 */
 
-
 type OrderPointer = Arc<Mutex<Order>>;
 type OrderPointers = VecDeque<OrderPointer>;
 
@@ -143,18 +146,32 @@ impl OrderModify {
         Self {
             order_id,
             price,
-            side, 
-            quantity
+            side,
+            quantity,
         }
     }
 
-    pub fn get_order_id(&self) -> OrderId { self.order_id }
-    pub fn get_price(&self) -> Price { self.price }
-    pub fn get_side(&self) -> Side { self.side }
-    pub fn get_quantity(&self) -> Quantity { self.quantity }
+    pub fn get_order_id(&self) -> OrderId {
+        self.order_id
+    }
+    pub fn get_price(&self) -> Price {
+        self.price
+    }
+    pub fn get_side(&self) -> Side {
+        self.side
+    }
+    pub fn get_quantity(&self) -> Quantity {
+        self.quantity
+    }
 
     pub fn to_order_pointer(&self, order_type: OrderType) -> OrderPointer {
-        Arc::new(Mutex::new(Order::new(order_type, self.order_id, self.side, self.price, self.quantity)))
+        Arc::new(Mutex::new(Order::new(
+            order_type,
+            self.order_id,
+            self.side,
+            self.price,
+            self.quantity,
+        )))
     }
 }
 
@@ -189,7 +206,7 @@ impl Trade {
 type Trades = VecDeque<Trade>;
 
 struct OrderEntry {
-    order: OrderPointer
+    order: OrderPointer,
 }
 
 pub struct OrderBook {
@@ -199,7 +216,6 @@ pub struct OrderBook {
 }
 
 impl OrderBook {
-
     pub fn new() -> Self {
         Self {
             bids: BTreeMap::new(),
@@ -242,7 +258,7 @@ impl OrderBook {
             let Some((&best_ask_price, _best_ask_order_p)) = self.asks.first_key_value() else {
                 return trades;
             };
-            
+
             let Some((&best_bid_price, _best_bid_order_p)) = self.bids.first_key_value() else {
                 return trades;
             };
@@ -260,11 +276,11 @@ impl OrderBook {
                     continue;
                 };
 
-                let Some(bid_remaining_qty) = bid_order_p.front() else{
+                let Some(bid_remaining_qty) = bid_order_p.front() else {
                     continue;
                 };
 
-                let Some(ask_remaining_qty) = ask_order_p.front() else{
+                let Some(ask_remaining_qty) = ask_order_p.front() else {
                     continue;
                 };
 
@@ -273,7 +289,10 @@ impl OrderBook {
                     let mut ask_obj = ask_remaining_qty.lock().unwrap();
                     let mut bid_obj = bid_remaining_qty.lock().unwrap();
 
-                    let qty: Quantity = cmp::min(ask_obj.get_remaining_quantity(), ask_obj.get_remaining_quantity());
+                    let qty: Quantity = cmp::min(
+                        ask_obj.get_remaining_quantity(),
+                        ask_obj.get_remaining_quantity(),
+                    );
 
                     let _ = ask_obj.fill(qty.clone());
                     let _ = bid_obj.fill(qty.clone());
@@ -291,13 +310,13 @@ impl OrderBook {
 
                     let curr_bid_trade = TradeInfo {
                         order_id: bid_obj.get_order_id(),
-                        quantity: qty.clone(), 
+                        quantity: qty.clone(),
                         price: bid_obj.get_price(),
                     };
 
                     let curr_ask_trade = TradeInfo {
                         order_id: ask_obj.get_order_id(),
-                        quantity: qty.clone(), 
+                        quantity: qty.clone(),
                         price: ask_obj.get_price(),
                     };
 
@@ -352,27 +371,31 @@ impl OrderBook {
                 }
             }
         }
-        
+
         trades
     }
 
     pub fn cancel_order(&mut self, order_id: OrderId) -> Result<(), CustomError> {
-
         if !self.orders.contains_key(&order_id) {
-            return Err(CustomError::CancelOrder(format!("Order doesn't exists. Invalid Order Id: {}", order_id)));
+            return Err(CustomError::CancelOrder(format!(
+                "Order doesn't exists. Invalid Order Id: {}",
+                order_id
+            )));
         }
 
         let Some(order_to_del) = self.orders.remove(&order_id) else {
             return Ok(());
         };
-        
+
         let curr_order = order_to_del.lock().unwrap();
 
         match curr_order.get_side() {
             Side::Buy => {
-                if let std::collections::btree_map::Entry::Occupied(mut bid_order_p) = self.bids.entry(Reverse(curr_order.get_price())) {
+                if let std::collections::btree_map::Entry::Occupied(mut bid_order_p) =
+                    self.bids.entry(Reverse(curr_order.get_price()))
+                {
                     let mut_order_p = bid_order_p.get_mut();
-                    
+
                     if let Some(idx) = mut_order_p.iter().position(|order_arc| {
                         if let Ok(order) = order_arc.lock() {
                             order.order_id == order_id
@@ -388,11 +411,13 @@ impl OrderBook {
                         bid_order_p.remove();
                     }
                 }
-            },
+            }
             Side::Sell => {
-                if let std::collections::btree_map::Entry::Occupied(mut ask_order_p) = self.asks.entry(curr_order.get_price()) {
+                if let std::collections::btree_map::Entry::Occupied(mut ask_order_p) =
+                    self.asks.entry(curr_order.get_price())
+                {
                     let mut_order_p = ask_order_p.get_mut();
-                    
+
                     if let Some(idx) = mut_order_p.iter().position(|order_arc| {
                         if let Ok(order) = order_arc.lock() {
                             order.order_id == order_id
@@ -421,19 +446,48 @@ impl OrderBook {
         let curr_order_price = order.get_price();
 
         if self.orders.contains_key(&curr_order_id) {
-            return Err(CustomError::DuplicateOrder(format!("OrderID: {} already exists", curr_order_id)));
+            return Err(CustomError::DuplicateOrder(format!(
+                "OrderID: {} already exists",
+                curr_order_id
+            )));
         }
 
-        if order.get_order_type() == OrderType::FillAndKill && !self.can_match(curr_order_side.clone(), curr_order_price.clone()) {
+        if order.get_order_type() == OrderType::FillAndKill
+            && !self.can_match(curr_order_side.clone(), curr_order_price.clone())
+        {
             return Ok(trades);
         }
 
         match order.get_side() {
             Side::Buy => {
-                self.asks.insert(curr_order_price, OrderPointers::new());
-            },
+                if self.bids.contains_key(&Reverse(order.get_price())) {
+                    if let std::collections::btree_map::Entry::Occupied(mut bid_order_p) =
+                        self.bids.entry(Reverse(order.get_price()))
+                    {
+                        let mut_order_p = bid_order_p.get_mut();
+                        mut_order_p.push_back(Arc::new(Mutex::new(order.clone())));
+                    }
+                } else {
+                    let order_arc = Arc::new(Mutex::new(order.clone()));
+                    let mut q: OrderPointers = VecDeque::new();
+                    q.push_back(order_arc);
+                    self.bids.insert(Reverse(curr_order_price), q);
+                }
+            }
             Side::Sell => {
-                self.bids.insert(Reverse(curr_order_price), OrderPointers::new());
+                if self.asks.contains_key(&order.get_price()) {
+                    if let std::collections::btree_map::Entry::Occupied(mut ask_order_p) =
+                        self.asks.entry(order.get_price())
+                    {
+                        let mut_order_p = ask_order_p.get_mut();
+                        mut_order_p.push_back(Arc::new(Mutex::new(order.clone())));
+                    }
+                } else {
+                    let order_arc = Arc::new(Mutex::new(order.clone()));
+                    let mut q: OrderPointers = VecDeque::new();
+                    q.push_back(order_arc);
+                    self.asks.insert(curr_order_price, q);
+                }
             }
         }
 
@@ -448,7 +502,10 @@ impl OrderBook {
         let curr_order_id = order.get_order_id();
 
         if self.orders.contains_key(&curr_order_id) {
-            return Err(CustomError::DuplicateOrder(format!("OrderID: {} already exists", curr_order_id)));
+            return Err(CustomError::DuplicateOrder(format!(
+                "OrderID: {} already exists",
+                curr_order_id
+            )));
         }
 
         let Some(order_to_del) = self.orders.remove(&curr_order_id) else {
@@ -457,10 +514,11 @@ impl OrderBook {
 
         let curr_order = order_to_del.lock().unwrap();
         let _ = self.cancel_order(curr_order.get_order_id());
-        let trades = self.add_order(order).map_err(|e| CustomError::AddOrderError(format!("Error Adding order : {:?}", e)))?;
+        let trades = self
+            .add_order(order)
+            .map_err(|e| CustomError::AddOrderError(format!("Error Adding order : {:?}", e)))?;
 
         Ok(trades)
-
     }
 
     pub fn size(&self) -> usize {
@@ -472,22 +530,40 @@ impl OrderBook {
         let mut ask_info: Vec<LevelInfo> = Vec::new();
 
         for (price, bid_order_p) in self.bids.iter() {
-            let qty: Quantity = bid_order_p.iter().map(|order_arc|  order_arc.lock().map(|order| order.get_remaining_quantity()).unwrap_or(0)).sum();
-
+            println!("bid_order_p: {}", bid_order_p.len());
+            let qty: Quantity = bid_order_p
+                .iter()
+                .map(|order_arc| {
+                    order_arc
+                        .lock()
+                        .map(|order| order.get_remaining_quantity())
+                        .unwrap_or(0)
+                })
+                .sum();
+            println!("Calculated Quantity for Bids: {}", qty);
             let curr_bid_level_info: LevelInfo = LevelInfo {
                 price: price.0,
-                quantity: qty
+                quantity: qty,
             };
 
             bid_info.push(curr_bid_level_info);
         }
 
         for (price, ask_order_p) in self.asks.iter() {
-            let qty: Quantity = ask_order_p.iter().map(|order_arc|  order_arc.lock().map(|order| order.get_remaining_quantity()).unwrap_or(0)).sum();
-
+            println!("ask_order_size: {}", ask_order_p.len());
+            let qty: Quantity = ask_order_p
+                .iter()
+                .map(|order_arc| {
+                    order_arc
+                        .lock()
+                        .map(|order| order.get_remaining_quantity())
+                        .unwrap_or(0)
+                })
+                .sum();
+            println!("Calculated Quantity for Asks: {}", qty);
             let curr_ask_level_info: LevelInfo = LevelInfo {
                 price: *price,
-                quantity: qty
+                quantity: qty,
             };
 
             ask_info.push(curr_ask_level_info);
@@ -500,5 +576,4 @@ impl OrderBook {
 
         return Ok(order_book_level_info);
     }
-
 }
