@@ -17,9 +17,11 @@ mod tests {
 
         let order_1 = Order::new(OrderType::GoodTillCancel, order_id, Side::Buy, 100, 100);
         let order_2 = Order::new(OrderType::GoodTillCancel, order_id + 1, Side::Buy, 100, 200);
+        let order_3 = Order::new(OrderType::FillAndKill, order_id + 2, Side::Sell, 200, 300);
 
         orderbook.add_order(order_1);
         orderbook.add_order(order_2);
+        orderbook.add_order(order_3);
 
         let size_of_orderbook = orderbook.size();
         println!("Size: {}", size_of_orderbook);

@@ -224,6 +224,87 @@ impl OrderBook {
         }
     }
 
+    fn fill_or_kill(&mut self, order: Order) -> Result<bool, CustomError> {
+        let order_side = order.get_side();
+        let order_price = order.get_price();
+        let order_qty = order.get_remaining_quantity();
+        match order_side {
+            Side::Buy => {
+                let mut removed_orders = None;
+                for (price, ask_order_p) in self.asks.iter_mut() {
+
+                    if *price != order_price {
+                        continue;
+                    }
+                    let mut total_qty = 0;
+                    let mut match_index = None;
+                    for (index, order_arc) in ask_order_p.iter().enumerate() {
+                        let curr_qty = order_arc.lock().map(|order| order.get_remaining_quantity()).unwrap_or(0);
+                        total_qty += curr_qty;
+
+                        if total_qty == order_qty {
+                            println!("FillAndKill matched for Buying!");
+                            match_index = Some(index);
+                            break;
+                        }
+                    }
+
+                    if let Some(idx) = match_index {
+                        let removed_orders_s: Vec<_> = ask_order_p.drain(0..=idx).collect();
+                        removed_orders = Some(removed_orders_s);
+                    }
+                    break;
+                }
+                if let Some(r_o) = removed_orders {
+                    for order in r_o {
+                        let o = order.lock().unwrap();
+                        self.asks.remove(&o.price);
+                        self.orders.remove(&o.order_id); 
+                    }
+                }
+                return Ok(false);
+            },
+            Side::Sell => {
+                let mut removed_orders = None;
+                for (price, bid_order_p) in self.bids.iter_mut() {
+                    
+                    if price.0 != order_price {
+                        continue;
+                    }
+                    let mut total_qty = 0;
+                    let mut match_index = None;
+                    for (index, order_arc) in bid_order_p.iter().enumerate() {
+                        let curr_qty = order_arc.lock().map(|order| order.get_remaining_quantity()).unwrap_or(0);
+                        total_qty += curr_qty;
+
+                        if total_qty == order_qty {
+                            println!("FillAndKill matched for Selling!");
+                            match_index = Some(index);
+                            break;
+                        }
+                    }
+
+                    if let Some(idx) = match_index {
+                        let removed_orders_s: Vec<_> = bid_order_p.drain(0..=idx).collect();
+                        removed_orders = Some(removed_orders_s);
+                    }
+
+                    break;
+                }
+
+                if let Some(r_o) = removed_orders {
+                    for order in r_o {
+                        let o = order.lock().unwrap();
+                        self.asks.remove(&o.price);
+                        self.orders.remove(&o.order_id); 
+                    }
+                }
+
+                Ok(false)
+            }
+        }
+    }
+
     fn can_match(&mut self, side: Side, price: Price) -> bool {
         match side {
             Side::Buy => {
@@ -451,10 +532,13 @@ impl OrderBook {
                 curr_order_id
             )));
         }
-
+        
         if order.get_order_type() == OrderType::FillAndKill
-            && !self.can_match(curr_order_side.clone(), curr_order_price.clone())
         {
+            if let Ok(executed) = self.fill_or_kill(order) {
+                println!("FoK executed!");
+            }
+
             return Ok(trades);
         }
 
